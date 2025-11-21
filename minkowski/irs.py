@@ -45,7 +45,31 @@ class Event:
         x: float
         name: str
         color: str = ""
+        invariant_interval: float = 0.0
 
+        def hyperbola(self, t_rest: float, x_rest: float, x_vals: np.ndarray) -> np.ndarray:
+                """
+                Compute the coordinates of the invariant interval (delta s^2), which results 
+                in a hyperbola in most cases when plotted. The form depends on its sign:
+
+                - Timelike case (delta s^2 > 0): the hyperbola opens along the t-axis.
+                - Spacelike case (delta s^2 < 0): the hyperbola opens along the x-axis.
+                - Lightlike case (delta s^2 = 0): light cones in abs(t)=abs(x).
+                """
+                general_t_vals = np.sqrt(x_vals**2 + self.invariant_interval)
+                
+                if self.invariant_interval > 0:
+                        t_vals = general_t_vals if self.t > 0 else -general_t_vals
+                        t_vals[(t_vals * self.t) < 0] = np.nan
+                        return t_vals
+                elif self.invariant_interval < 0:
+                        t_vals = general_t_vals if self.x > 0 else -general_t_vals
+                        t_vals[(x_vals * self.x) < 0] = np.nan
+                else:
+                        t_vals = x_vals if np.sign(t_rest) == np.sign(x_rest) else -x_vals
+                
+                return t_vals
+        
 @dataclass
 class InertialFrame:
         """
@@ -76,12 +100,14 @@ class InertialFrame:
 
                 existing_names = [name.rstrip("0123456789") for name in sr_rest.events.keys()]
                 base_name = generate_event_name(existing_names)
-                sr_rest.events[base_name] = Event(t_rest, x_rest, base_name, sr_rest.color)
+                invariant_interval = t_rest**2 - x_rest**2
+                sr_rest.events[base_name] = Event(t_rest, x_rest, base_name, sr_rest.color, invariant_interval)
 
                 for frame in frames:
                         t_new, x_new = lorentz_transform(t_rest, x_rest, frame.v)
+                        invariant_interval = t_rest**2 - x_rest**2
                         event_label = base_name if frame == sr_rest else f"{base_name}{frame.index}"
-                        frame.events[event_label] = Event(t_new, x_new, event_label, frame.color)
+                        frame.events[event_label] = Event(t_new, x_new, event_label, frame.color, invariant_interval)
 
 # dictionary for all the defined IRS
 frames: List[InertialFrame] = []
