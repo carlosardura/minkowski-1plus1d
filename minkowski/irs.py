@@ -6,6 +6,8 @@ class MinkowskiEngine:
         self.rest = np.empty((2,0))
         self.names = []
         self.metric = np.diag([1, -1])   # Minkowski metric tensor
+        self.e0 = np.array([[1],[0]])   # unit time vector at rest
+        self.e1 = np.array([[0],[1]])   # unit space vector at rest
 
     def add_event(self, t: float, x: float, name: str):
         new_event = np.array([[t], [x]])
@@ -62,3 +64,18 @@ class Segment:
     def causality(self) -> Tuple[float, str]:
         dx = self.engine.rest[:, [self.index2]] - self.engine.rest[:, [self.index1]]
         return self.engine.causal_structure(dx)
+    
+class ReferenceFrame:
+    def __init__(self, engine: MinkowskiEngine, v: float, index: int):
+        self.engine = engine
+        self.v = v
+        self.index = index
+
+    @property
+    def label(self) -> str:
+        return "S" if self.index == 0 else f"S{self.index}"
+    
+    def axes(self) -> Tuple[np.ndarray, np.ndarray]:
+        t_axis = self.engine.boost(self.engine.e0, -self.v)
+        x_axis = self.engine.boost(self.engine.e1, -self.v)
+        return t_axis, x_axis
