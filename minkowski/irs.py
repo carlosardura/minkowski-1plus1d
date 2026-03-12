@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Tuple
+from typing import Tuple, List
 
 class MinkowskiEngine:
     def __init__(self):
@@ -66,10 +66,16 @@ class Segment:
         return self.engine.causal_structure(dx)
     
 class ReferenceFrame:
-    def __init__(self, engine: MinkowskiEngine, v: float, index: int):
+    def __init__(self, engine: MinkowskiEngine, v: float, index: int, colors: Tuple[str, str]):
         self.engine = engine
         self.v = v
         self.index = index
+        self.colors = colors
+        self.is_active = False
+
+    @property
+    def color(self) -> str:
+        return self.colors[0] if self.is_active else self.colors[1]
 
     @property
     def label(self) -> str:
@@ -79,3 +85,45 @@ class ReferenceFrame:
         t_axis = self.engine.boost(self.engine.e0, -self.v)
         x_axis = self.engine.boost(self.engine.e1, -self.v)
         return t_axis, x_axis
+
+
+class FrameManager:
+    tab20 = [
+        ("#1f77b4", "#aec7e8"), ("#ff7f0e", "#ffbb78"),
+        ("#2ca02c", "#98df8a"), ("#d62728", "#ff9896"),
+        ("#9467bd", "#c5b0d5"), ("#8c564b", "#c49c94"),
+        ("#e377c2", "#f7b6d2"), ("#7f7f7f", "#c7c7c7"),
+        ("#bcbd22", "#dbdb8d"),("#17becf", "#9edae5")
+    ]
+
+    def __init__(self, engine: MinkowskiEngine):
+        self.engine = engine
+        self.frames: List[ReferenceFrame] = []
+        self.add_frame(v=0.0)
+
+    def set_focus(self, index: int):
+        for f in self.frames:
+            f.is_active = (f.index == index)
+        self.active_index = index
+
+    def add_frame(self, v:float) -> ReferenceFrame:
+        used_indices = {f.index for f in self.frames}
+        free_index = next((i for i in range(11) if i not in used_indices), None)
+        if free_index is None:
+            raise RuntimeError
+        if free_index == 0:
+            new_frame = ReferenceFrame(self.engine, 0.0, 0, ("#404040", "#404040"))
+        else:
+            colors = self.tab20[free_index - 1]
+            new_frame = ReferenceFrame(self.engine, v, free_index, colors)
+
+        self.frames.append(new_frame)
+        self.frames.sort(key=lambda x: x.index)
+        self.set_focus(free_index)
+        return new_frame
+    
+    def remove_frame(self):
+        if self.active_index == 0:
+            return
+        self.frames = [f for f in self.frames if f.index != self.active_index]
+        self.set_focus(0)
