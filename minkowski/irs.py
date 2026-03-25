@@ -9,6 +9,10 @@ class MinkowskiEngine:
         self.e0 = np.array([[1],[0]])   # unit time vector at rest
         self.e1 = np.array([[0],[1]])   # unit space vector at rest
 
+    @property
+    def light_vectors(self) -> np.ndarray:
+        return np.array([[1.0, 1.0], [1.0, -1.0]])
+
     def add_event(self, t: float, x: float, name: str):
         new_event = np.array([[t], [x]])
         self.rest = np.hstack([self.rest, new_event])
@@ -61,10 +65,17 @@ class Segment:
         x2_rest = self.engine.rest[:, [self.index2]]
         return (self.engine.boost(x1_rest, v), self.engine.boost(x2_rest, v))
 
+    def coordinate_deltas(self, v: float = 0.0) -> Tuple[float, float]:
+        p1, p2 = self.coordinates(v)
+        dt_prime = p2[0, 0] - p1[0, 0]
+        dx_prime = p2[1, 0] - p1[1, 0]
+        return dt_prime, dx_prime
+
     def causality(self) -> Tuple[float, str]:
         dx = self.engine.rest[:, [self.index2]] - self.engine.rest[:, [self.index1]]
         return self.engine.causal_structure(dx)
-    
+
+
 class ReferenceFrame:
     def __init__(self, engine: MinkowskiEngine, v: float, index: int, colors: Tuple[str, str]):
         self.engine = engine
@@ -99,6 +110,7 @@ class FrameManager:
     def __init__(self, engine: MinkowskiEngine):
         self.engine = engine
         self.frames: List[ReferenceFrame] = []
+        self.active_index: int = 0
         self.add_frame(v=0.0)
 
     def set_focus(self, index: int):
@@ -121,9 +133,11 @@ class FrameManager:
         self.frames.sort(key=lambda x: x.index)
         self.set_focus(free_index)
         return new_frame
-    
+
     def remove_frame(self):
         if self.active_index == 0:
             return
+        deleted_index = self.active_index
         self.frames = [f for f in self.frames if f.index != self.active_index]
         self.set_focus(0)
+        return deleted_index
