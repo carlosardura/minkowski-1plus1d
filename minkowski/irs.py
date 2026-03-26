@@ -4,7 +4,6 @@ from typing import Tuple, List
 class MinkowskiEngine:
     def __init__(self):
         self.rest = np.empty((2,0))
-        self.names = []
         self.metric = np.diag([1, -1])   # Minkowski metric tensor
         self.e0 = np.array([[1],[0]])   # unit time vector at rest
         self.e1 = np.array([[0],[1]])   # unit space vector at rest
@@ -13,17 +12,23 @@ class MinkowskiEngine:
     def light_vectors(self) -> np.ndarray:
         return np.array([[1.0, 1.0], [1.0, -1.0]])
 
-    def add_event(self, t: float, x: float, name: str):
-        new_event = np.array([[t], [x]])
-        self.rest = np.hstack([self.rest, new_event])
-        self.names.append(name)
+    def add_event(self, t: float, x: float) -> int:
+        index = self.rest.shape[1]
+        self.rest = np.hstack([self.rest, np.array([[t], [x]])])
+        return index
+    
+    def remove_event(self, index: int):
+        if 0 <= index < self.rest.shape[1]:
+            self.rest[:, index] = np.nan
+        else:
+            raise IndexError
 
     @staticmethod
     def lorentz_matrix(v: float) -> np.ndarray:
         if abs(v) >= 1: raise ValueError
         gamma = 1 / np.sqrt(1 - v**2)   # Lorentz factor
         return np.array([[gamma, -v*gamma], [-v*gamma, gamma]])
-    
+
     def boost(self, x: np.ndarray, v: float) -> np.ndarray:
         if v == 0: return x
         return self.lorentz_matrix(v) @ x
@@ -37,13 +42,10 @@ class MinkowskiEngine:
 
 
 class Event:
-    def __init__(self, engine: MinkowskiEngine, index: int):
+    def __init__(self, engine: MinkowskiEngine, index: int, frame_index: int = 0):
         self.engine = engine
         self.index = index
-
-    @property
-    def name_base(self) -> str:
-        return self.engine.names[self.index]
+        self.frame_index = frame_index
 
     def coordinates(self, v: float = 0.0) -> np.ndarray:
         x_rest = self.engine.rest[:, [self.index]]
@@ -55,10 +57,11 @@ class Event:
 
 
 class Segment:
-    def __init__(self, engine: MinkowskiEngine, index1: int, index2: int):
+    def __init__(self, engine: MinkowskiEngine, index1: int, index2: int, frame_index: int = 0):
         self.engine = engine
         self.index1 = index1
         self.index2 = index2
+        self.frame_index = frame_index
 
     def coordinates(self, v: float = 0.0) -> Tuple[np.ndarray, np.ndarray]:
         x1_rest = self.engine.rest[:, [self.index1]]
@@ -87,10 +90,6 @@ class ReferenceFrame:
     @property
     def color(self) -> str:
         return self.colors[0] if self.is_active else self.colors[1]
-
-    @property
-    def label(self) -> str:
-        return "S" if self.index == 0 else f"S{self.index}"
     
     def axes(self) -> Tuple[np.ndarray, np.ndarray]:
         t_axis = self.engine.boost(self.engine.e0, -self.v)
@@ -136,7 +135,7 @@ class FrameManager:
 
     def remove_frame(self):
         if self.active_index == 0:
-            return
+            return -1
         deleted_index = self.active_index
         self.frames = [f for f in self.frames if f.index != self.active_index]
         self.set_focus(0)
