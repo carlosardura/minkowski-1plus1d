@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Tuple, List
+from typing import Tuple, List, cast
 
 class MinkowskiEngine:
     """
@@ -8,7 +8,7 @@ class MinkowskiEngine:
     via vectorized operations, implementing the fundamental Minkowski
     geometric structure defined by the metric tensor.
     """
-    def __init__(self):
+    def __init__(self) -> None:
         """
         Initializes the Minkowski space with a (+, -) metric signature and 
         establishes the standard covariant basis vectors in the rest frame.
@@ -16,18 +16,13 @@ class MinkowskiEngine:
         """
         self._capacity = 16
         self._next_index = 0
+        self._free_indices: set[int] = set()
         self.rest = np.full((2, self._capacity), np.nan)
+        
         self.metric = np.diag([1, -1])
         self.e0 = np.array([[1],[0]])
         self.e1 = np.array([[0],[1]])
-
-    @property
-    def light_vectors(self) -> np.ndarray:
-        """
-        Generates the basis vectors defining the boundary of the light cone,
-        satisfying $s^2 = 0$.
-        """
-        return np.array([[1.0, 1.0], [1.0, -1.0]])
+        self.light_cone = np.array([[1.0, 1.0], [1.0, -1.0]])
 
     def add_event(self, t: float, x: float) -> int:
         """
@@ -35,24 +30,28 @@ class MinkowskiEngine:
         the column index associated with the event. Implements capacity 
         doubling prioritizing the CPU cost.
         """
-        if self._next_index >= self._capacity:
-            self._capacity *= 2
-            new_rest = np.full((2, self._capacity), np.nan)
-            new_rest[:, :self._next_index] = self.rest
-            self.rest = new_rest
-        index = self._next_index
+        if self._free_indices:
+            index = self._free_indices.pop()
+        else:
+            if self._next_index >= self._capacity:
+                self._capacity *= 2
+                new_rest = np.full((2, self._capacity), np.nan)
+                new_rest[:, :self._next_index] = self.rest
+                self.rest = new_rest
+            index = self._next_index
+            self._next_index += 1
         self.rest[:, index] = [t, x]
-        self._next_index += 1
         return index
     
-    def remove_event(self, index: int):
+    def remove_event(self, index: int) -> None:
         """
         Deletes events from the coordinate matrix via NaN masking, preserving 
         the dimensional structure of the matrix and the column indices of all 
         subsequent events.
         """
-        if 0 <= index < self._next_index:
+        if 0 <= index < self._next_index and index not in self._free_indices:
             self.rest[:, index] = np.nan
+            self._free_indices.add(index)
         else:
             raise IndexError(f"Event {index} out of bounds.")
 
@@ -73,15 +72,26 @@ class MinkowskiEngine:
         coordinates into an inertial frame moving at velocity v.
         """
         if v == 0: return x
-        return self.lorentz_matrix(v) @ x
+        return cast(np.ndarray, self.lorentz_matrix(v) @ x)
     
-    def causal_structure(self, x: np.ndarray, epsilon = 1e-9) -> Tuple[float, str]:
+    def active_coordinates(self, v: float = 0.0) -> np.ndarray:
+        """
+        Computes a new submatrix formed by all defined non-NaN events and boosts 
+        them in a single vectorized operation.
+        """
+        sub_rest = ~np.isnan(self.rest[0, :self._next_index])
+        active_rest = self.rest[:, :self._next_index][:, sub_rest]
+        if active_rest.size == 0:
+            return active_rest
+        return self.boost(active_rest, v)
+    
+    def causal_structure(self, x: np.ndarray, epsilon: float = 1e-9) -> Tuple[float, str]:
         """
         Evaluates the invariant interval to classify the geometric causality 
         of a four-vector. Handles floating-point imprecision via a defined
         epsilon tolerance for null intervals.
         """
-        s2 = (x.T @ self.metric @ x).item()
+        s2 = float((x[0]**2-x[1]**2).item())
         if s2 > epsilon: causality = "timelike"
         elif s2 < -epsilon: causality = "spacelike"
         else: causality = "lightlike"
@@ -94,24 +104,23 @@ class Event:
     the central coordinate matrix defined in the engine, calculating its
     position given a velocity for subsequent graphical representation.
     """
-    def __init__(self, engine: MinkowskiEngine, index: int, frame_index: int = 0):
+    def __init__(self, engine: MinkowskiEngine, index: int):
         self.engine = engine
         self.index = index
-        self.frame_index = frame_index
 
     def coordinates(self, v: float = 0.0) -> np.ndarray:
         """
         Calculates the event's contravariant coordinates relative to a 
         moving observer.
         """
-        x_rest = self.engine.rest[:, [self.index]]
+        x_rest = self.engine.rest[:, self.index:self.index+1]
         return self.engine.boost(x_rest, v)
 
     def causality(self) -> Tuple[float, str]:
         """
         Determines the invariant interval relative to the origin.
         """
-        x = self.engine.rest[:, [self.index]]
+        x = self.engine.rest[:, self.index:self.index+1]
         return self.engine.causal_structure(x)
 
 
@@ -121,18 +130,17 @@ class Segment:
     for evaluating kinematic phenomena such as time dilation and length
     contraction across the defined reference frames.
     """
-    def __init__(self, engine: MinkowskiEngine, index1: int, index2: int, frame_index: int = 0):
+    def __init__(self, engine: MinkowskiEngine, index1: int, index2: int):
         self.engine = engine
         self.index1 = index1
         self.index2 = index2
-        self.frame_index = frame_index
 
     def coordinates(self, v: float = 0.0) -> Tuple[np.ndarray, np.ndarray]:
         """
         Computes the boosted coordinates of both bounding events.
         """
-        x1_rest = self.engine.rest[:, [self.index1]]
-        x2_rest = self.engine.rest[:, [self.index2]]
+        x1_rest = self.engine.rest[:, self.index1:self.index1+1]
+        x2_rest = self.engine.rest[:, self.index2:self.index2+1]
         return (self.engine.boost(x1_rest, v), self.engine.boost(x2_rest, v))
 
     def coordinate_deltas(self, v: float = 0.0) -> Tuple[float, float]:
@@ -148,7 +156,7 @@ class Segment:
         """
         Evaluates the invariant interval separating the two bounding events.
         """
-        dx = self.engine.rest[:, [self.index2]] - self.engine.rest[:, [self.index1]]
+        dx = self.engine.rest[:, self.index2:self.index2+1] - self.engine.rest[:, self.index1:self.index1+1]
         return self.engine.causal_structure(dx)
 
 
@@ -198,7 +206,7 @@ class FrameManager:
         self.frames.sort(key=lambda x: x.index)
         return new_frame
 
-    def remove_frame(self, index: int):
+    def remove_frame(self, index: int) -> None:
         """
         Purges a specific IRS by its index, preventing the removal of the 
         fundamental rest frame at index 0.
