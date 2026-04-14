@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools >= 77.0.3"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "minkowski-1plus1d"
+version = "0.1.0"
+description = "Relativistic interface for Minkowski 1+1D diagrams"
+
+requires-python = ">= 3.9" 
+
+dependencies = [
+    "numpy",
+    "PyQt6",
+    "pyqtgraph"
+]
+
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Programming Language :: Python :: 3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "mypy"
+]
+
+[tool.setuptools.packages.find]
+include = ["minkowski"]
